@@ -1,0 +1,7 @@
+{
+  "current": "route-a",
+  "routes": {
+    "route-a": [{"ok": true, "latency_ms": 240}, {"ok": true, "latency_ms": 250}, {"ok": true, "latency_ms": 260}],
+    "route-b": [{"ok": true, "latency_ms": 110}, {"ok": true, "latency_ms": 120}, {"ok": true, "latency_ms": 130}]
+  }
+}
