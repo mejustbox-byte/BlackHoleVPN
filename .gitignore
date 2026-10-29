@@ -7,3 +7,7 @@
 secrets/
 backups/
 client-configs/
+
+# Python runtime artifacts
+__pycache__/
+*.py[cod]

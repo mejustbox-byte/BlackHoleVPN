@@ -60,7 +60,7 @@ def save_validated(path, config, xray):
     parent = path.parent
     if not parent.is_dir():
         raise ValueError('config directory must already exist')
-    fd, tmp = tempfile.mkstemp(prefix='.blackhole-', dir=parent)
+    fd, tmp = tempfile.mkstemp(prefix='.blackhole-', suffix='.json', dir=parent)
     try:
         with os.fdopen(fd, 'w', encoding='utf-8') as out:
             os.fchmod(out.fileno(), 0o600)
