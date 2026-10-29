@@ -119,6 +119,10 @@ def list_revisions(path):
 def publish(path, data, xray):
     """Call under locked(path): validate candidate, snapshot old, replace, fsync."""
     path = Path(path)
+    from . import devices
+    if devices.initialized(path):
+        import json
+        devices.assert_config(json.loads(data), devices.load(path))
     if not isinstance(data, bytes) or len(data) > MAX_CONFIG_BYTES:
         raise ValueError('invalid configuration bytes')
     if os.path.lexists(path):

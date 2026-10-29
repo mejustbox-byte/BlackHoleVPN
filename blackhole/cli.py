@@ -6,9 +6,8 @@ import re
 import secrets
 import subprocess
 import sys
-import uuid
 from pathlib import Path
-from . import config_store
+from . import config_store, devices
 from .subctl import private_file
 
 
@@ -84,6 +83,9 @@ def main(argv=None):
     remove = sub.add_parser('revoke-client'); remove.add_argument('name')
     sub.add_parser('list-clients')
     sub.add_parser('validate')
+    sub.add_parser('registry-init')
+    sub.add_parser('list-devices')
+    sub.add_parser('reconcile')
     sub.add_parser('backup')
     sub.add_parser('list-backups')
     restore = sub.add_parser('restore'); restore.add_argument('revision')
@@ -93,10 +95,23 @@ def main(argv=None):
             if args.action == 'list-backups':
                 for revision in config_store.list_revisions(args.config): print(revision)
                 return 0
+            if args.action == 'registry-init':
+                existing = load_config(args.config)
+                result = subprocess.run([args.xray, 'run', '-test', '-config', args.config],
+                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=30, check=False)
+                if result.returncode: raise ValueError('configuration validation failed')
+                devices.bootstrap(args.config, existing)
+                print('Device authority initialized; keep it separate from configuration snapshots')
+                return 0
+            if args.action == 'list-devices':
+                for d in devices.load(args.config)['devices']:
+                    print(d['device_id'], d['name'], d['status'])
+                return 0
             if args.action == 'restore':
                 source = config_store.revision_path(args.config, args.revision)
                 restored = json.loads(config_store.read_private(source))
                 clients(restored)
+                restored = devices.reconcile(restored, devices.load(args.config))
                 config_store.publish(args.config, (json.dumps(restored, indent=2) + '\n').encode('utf-8'), args.xray)
                 print('Revision validated and restored; restart Xray separately')
                 return 0
@@ -107,6 +122,14 @@ def main(argv=None):
                 config = build_config(args.target, key, secrets.token_hex(8), args.port, args.fallback_port, args.xhttp_path)
             else:
                 config = load_config(args.config)
+            if args.action == 'init':
+                if not devices.initialized(args.config): devices.bootstrap(args.config, config)
+                state = devices.load(args.config)
+                config = devices.reconcile(config, state)
+            else:
+                state = devices.load(args.config)
+            if args.action not in ('add-client', 'revoke-client', 'reconcile'):
+                devices.assert_config(config, state)
             if args.action == 'backup':
                 result = subprocess.run([args.xray, 'run', '-test', '-config', args.config],
                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=30, check=False)
@@ -120,18 +143,16 @@ def main(argv=None):
                 name = validate_name(args.name)
                 if any(c.get('email') == name for group in client_groups(config).values() for c in group):
                     raise ValueError('client name already exists')
-                client_id = str(uuid.uuid4())
-                for tag, group in client_groups(config).items():
-                    entry = {'id':client_id, 'email':name}
-                    if tag == 'vless-reality': entry['flow'] = 'xtls-rprx-vision'
-                    group.append(entry)
+                devices.allocate(state, name)
+                devices.write(args.config, state)
+                config = devices.reconcile(config, state)
             elif args.action == 'revoke-client':
-                name = validate_name(args.name)
-                groups = client_groups(config)
-                before = sum(len(group) for group in groups.values())
-                for group in groups.values(): group[:] = [c for c in group if c.get('email') != name]
-                if sum(len(group) for group in groups.values()) == before:
-                    raise ValueError('client not found')
+                devices.revoke(state, validate_name(args.name))
+                # Tombstone is durable BEFORE publishing the server configuration.
+                devices.write(args.config, state)
+                config = devices.reconcile(config, state)
+            elif args.action == 'reconcile':
+                config = devices.reconcile(config, state)
             if args.action == 'validate':
                 result = subprocess.run([args.xray, 'run', '-test', '-config', args.config], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=30, check=False)
                 if result.returncode: raise ValueError('Xray rejected configuration')
@@ -141,7 +162,7 @@ def main(argv=None):
                 print('Configuration validated and saved; restart Xray separately')
             return 0
     except (OSError, ValueError, KeyError, TypeError, json.JSONDecodeError, subprocess.TimeoutExpired) as exc:
-        print('error: operation failed; check private files, lock, revisions and Xray compatibility', file=sys.stderr)
+        print('error: operation failed; check private files, device registry, lock, revisions and Xray compatibility', file=sys.stderr)
         return 2
 
 if __name__ == '__main__':
