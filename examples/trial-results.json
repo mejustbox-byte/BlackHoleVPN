@@ -1,0 +1,8 @@
+{"results":[
+ {"stage":1,"case":"xhttp","network":"test_wifi","client":"test_client","status":"not_run","latency_ms":null},
+ {"stage":2,"case":"server_b","network":"test_wifi","client":"test_client","status":"not_run","latency_ms":null},
+ {"stage":3,"case":"firefox","network":"test_wifi","client":"test_client","status":"not_run","latency_ms":null},
+ {"stage":4,"case":"fragment","network":"test_wifi","client":"test_client","status":"not_run","latency_ms":null},
+ {"stage":5,"case":"ios_mobile","network":"test_mobile","client":"test_client","status":"not_run","latency_ms":null},
+ {"stage":6,"case":"rollback","network":"test_wifi","client":"test_client","status":"not_run","latency_ms":null}
+]}
