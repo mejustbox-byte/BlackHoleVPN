@@ -42,10 +42,14 @@ def build_config(target, key, short_id, port, fallback_port=8443, xhttp_path='/b
 
 
 def client_groups(config):
+    if not isinstance(config, dict):
+        raise ValueError('invalid managed configuration')
     inbounds = config.get('inbounds', [])
+    if not isinstance(inbounds, list) or any(not isinstance(i, dict) for i in inbounds):
+        raise ValueError('invalid managed inbounds')
     matches = [i for i in inbounds if i.get('tag') in ('vless-reality','vless-xhttp') and i.get('protocol') == 'vless']
     tags = [i.get('tag') for i in matches]
-    if tags.count('vless-reality') != 1 or tags.count('vless-xhttp') > 1 or any(not isinstance(i.get('settings', {}).get('clients'), list) for i in matches):
+    if tags.count('vless-reality') != 1 or tags.count('vless-xhttp') > 1 or any(not isinstance(i.get('settings'), dict) or not isinstance(i['settings'].get('clients'), list) or any(not isinstance(c, dict) for c in i['settings']['clients']) for i in matches):
         raise ValueError('invalid managed VLESS inbounds')
     return {i['tag']:i['settings']['clients'] for i in matches}
 

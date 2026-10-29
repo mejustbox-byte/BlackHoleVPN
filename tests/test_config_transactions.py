@@ -102,3 +102,9 @@ class TransactionTests(unittest.TestCase):
         with config_store.locked(self.path):
             with self.assertRaises(TimeoutError):
                 with config_store.locked(self.path,timeout=0.02):pass
+
+    def test_malformed_structures_fail_without_traceback(self):
+        for data in ([], {'inbounds': [None]}, {'inbounds': [{'tag':'vless-reality', 'protocol':'vless', 'settings':None}]},
+                     {'inbounds': [{'tag':'vless-reality', 'protocol':'vless', 'settings':{'clients':['secret-payload']}}]}):
+            self.path.write_text(json.dumps(data))
+            self.assertEqual(self.call('add-client','phone')[0],2)
