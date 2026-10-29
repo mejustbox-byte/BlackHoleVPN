@@ -28,8 +28,12 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(main(base+['add-client','phone']),0)
         self.assertEqual(main(base+['add-client','phone']),2)
         self.assertEqual(len(clients(json.loads(self.path.read_text()))),1)
+        cfg=json.loads(self.path.read_text()); self.assertEqual(len(cfg['inbounds'][0]['settings']['clients']),1)
+        self.assertNotIn('flow',cfg['inbounds'][0]['settings']['clients'][0])
+        self.assertEqual(cfg['inbounds'][0]['settings']['clients'][0]['id'],cfg['inbounds'][1]['settings']['clients'][0]['id'])
         self.assertEqual(main(base+['revoke-client','phone']),0)
         self.assertEqual(len(clients(json.loads(self.path.read_text()))),0)
+        self.assertEqual(len(json.loads(self.path.read_text())['inbounds'][0]['settings']['clients']),0)
     def test_invalid_values(self):
         for target,key,short,port in [('bad host','A'*43,'a'*16,443),('example.org','bad','a'*16,443),('example.org','A'*43,'a'*16,0)]:
             with self.assertRaises(ValueError): build_config(target,key,short,port)
