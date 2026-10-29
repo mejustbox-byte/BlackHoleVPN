@@ -20,3 +20,5 @@ BLACKHOLE_TEST_XRAY=/usr/local/bin/xray python3 -m unittest discover -s tests -v
 ## Результаты и клиентские испытания
 
 [Подтверждённые проверки](validation-results.md) отделены от ещё не выполненных испытаний. Для ручной проверки подготовлены [инструкции Windows и iOS](windows-ios-testing.md). Профили и реквизиты выдаются приватно, вне репозитория.
+
+Тест настоящего Xray дополнительно экспортирует и валидирует четыре клиентских JSON: XHTTP и TCP/Vision, каждый с FinalMask и без. Это проверка конфигурации; отдельные сетевые испытания описаны в [результатах](validation-results.md). [Использование экспортёра](client-json-export.md).

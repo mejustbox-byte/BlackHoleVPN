@@ -35,6 +35,20 @@ class XrayCompatibility(unittest.TestCase):
             data = json.loads(config.read_text(encoding='utf-8'))
             self.assertEqual(len(data['inbounds'][0]['settings']['clients']), 1)
             run('validate')
+            public = re.search(r'^\s*(?:PublicKey|Password \(PublicKey\)):\s*([A-Za-z0-9_-]{43})\s*$', pair.stdout, re.MULTILINE | re.IGNORECASE)
+            self.assertIsNotNone(public, 'unrecognized Xray public key output')
+            pubfile = root / 'public'; pubfile.write_text(public.group(1)); pubfile.chmod(0o600)
+            for transport in ('xhttp', 'tcp'):
+                for fragment in (False, True):
+                    output = root / (transport + ('-fragment' if fragment else '-plain') + '.json')
+                    command = [sys.executable, '-m', 'blackhole.export', '--config', str(config),
+                               '--name', 'test-device', '--address', '127.0.0.1',
+                               '--public-key-file', str(pubfile), '--transport', transport,
+                               '--output', str(output), '--xray', str(binary)]
+                    if fragment: command.append('--fragment')
+                    result = subprocess.run(command, capture_output=True, text=True, timeout=40)
+                    self.assertEqual(result.returncode, 0, result.stderr)
+                    self.assertEqual(output.stat().st_mode & 0o777, 0o600)
             run('revoke-client', 'test-device')
             self.assertEqual(len(json.loads(config.read_text())['inbounds'][0]['settings']['clients']), 0)
             run('validate')
