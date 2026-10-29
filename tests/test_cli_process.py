@@ -8,7 +8,7 @@ from pathlib import Path
 class ProcessTests(unittest.TestCase):
     def test_xray_failure_leaves_no_candidate_and_no_secrets(self):
         with tempfile.TemporaryDirectory() as t:
-            root=Path(t); key=root/'key'; key.write_text('A'*43); fake=root/'xray'
+            root=Path(t); key=root/'key'; key.write_text('A'*43); key.chmod(0o600); fake=root/'xray'
             fake.write_text('#!/bin/sh\necho fake-private-key >&2\nexit 1\n'); fake.chmod(0o700)
             target=root/'server.json'
             p=subprocess.run([sys.executable,'-m','blackhole.cli','--config',str(target),'--xray',str(fake),'init','--target','example.org','--private-key-file',str(key)],capture_output=True,text=True)
