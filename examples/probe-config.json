@@ -1,0 +1,8 @@
+{
+  "target": "https://health.example.org/generate_204",
+  "current": "primary",
+  "routes": {
+    "primary": {"host": "127.0.0.1", "port": 11080},
+    "fallback": {"host": "127.0.0.1", "port": 11081}
+  }
+}
