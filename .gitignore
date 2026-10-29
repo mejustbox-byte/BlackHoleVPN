@@ -1,0 +1,9 @@
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+*.secret
+secrets/
+backups/
+client-configs/
