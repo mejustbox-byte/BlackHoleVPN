@@ -23,23 +23,34 @@ def check_domain(value):
     return value.lower()
 
 
-def build_config(target, key, short_id, port):
+def build_config(target, key, short_id, port, fallback_port=8443, xhttp_path='/blackhole'):
     target = check_domain(target)
     if not re.fullmatch(r'[A-Za-z0-9_-]{43}', key):
         raise ValueError('invalid X25519 private key format')
     if not re.fullmatch(r'[0-9a-f]{16}', short_id):
         raise ValueError('short id must be 16 lowercase hex digits')
-    if not 1 <= port <= 65535:
-        raise ValueError('port must be in 1..65535')
-    return {'log': {'loglevel':'warning'}, 'inbounds':[{'tag':'vless-reality','listen':'0.0.0.0','port':port,'protocol':'vless', 'settings':{'clients':[], 'decryption':'none'}, 'streamSettings':{'network':'tcp','security':'reality','realitySettings':{'show':False,'target':target+':443','serverNames':[target],'privateKey':key,'shortIds':[short_id]}}}], 'outbounds':[{'protocol':'freedom','tag':'direct'}]}
+    if not 1 <= port <= 65535 or not 1 <= fallback_port <= 65535 or port == fallback_port:
+        raise ValueError('ports must be distinct and in 1..65535')
+    if not re.fullmatch(r'/[A-Za-z0-9/_-]{1,100}', xhttp_path):
+        raise ValueError('invalid XHTTP path')
+    def inbound(tag, listen_port, network):
+        stream = {'network': network, 'security': 'reality', 'realitySettings': {'show': False, 'target':target+':443', 'serverNames':[target], 'privateKey':key, 'shortIds':[short_id]}}
+        if network == 'xhttp': stream['xhttpSettings'] = {'mode':'stream-one', 'path':xhttp_path}
+        return {'tag':tag, 'listen':'0.0.0.0', 'port':listen_port, 'protocol':'vless', 'settings':{'clients':[], 'decryption':'none'}, 'streamSettings':stream}
+    return {'log':{'access':'none', 'error':'none', 'loglevel':'none', 'dnsLog':False}, 'inbounds':[inbound('vless-xhttp',port,'xhttp'), inbound('vless-reality',fallback_port,'tcp')], 'outbounds':[{'protocol':'freedom','tag':'direct'}]}
+
+
+def client_groups(config):
+    inbounds = config.get('inbounds', [])
+    matches = [i for i in inbounds if i.get('tag') in ('vless-reality','vless-xhttp') and i.get('protocol') == 'vless']
+    tags = [i.get('tag') for i in matches]
+    if tags.count('vless-reality') != 1 or tags.count('vless-xhttp') > 1 or any(not isinstance(i.get('settings', {}).get('clients'), list) for i in matches):
+        raise ValueError('invalid managed VLESS inbounds')
+    return {i['tag']:i['settings']['clients'] for i in matches}
 
 
 def clients(config):
-    inbounds = config.get('inbounds', [])
-    matches = [i for i in inbounds if i.get('tag') == 'vless-reality' and i.get('protocol') == 'vless']
-    if len(matches) != 1 or not isinstance(matches[0].get('settings', {}).get('clients'), list):
-        raise ValueError('expected one managed VLESS inbound with clients')
-    return matches[0]['settings']['clients']
+    return client_groups(config)['vless-reality']
 
 
 def save_validated(path, config, xray):
@@ -85,6 +96,8 @@ def main(argv=None):
     init.add_argument('--target', required=True, help='REALITY target hostname, port 443')
     init.add_argument('--private-key-file', required=True, help='file containing X25519 private key')
     init.add_argument('--port', type=int, default=443)
+    init.add_argument('--fallback-port', type=int, default=8443)
+    init.add_argument('--xhttp-path', default='/blackhole')
     add = sub.add_parser('add-client'); add.add_argument('name')
     remove = sub.add_parser('revoke-client'); remove.add_argument('name')
     sub.add_parser('list-clients')
@@ -95,7 +108,7 @@ def main(argv=None):
             if os.path.lexists(args.config):
                 raise ValueError('config already exists; refusing to overwrite')
             key = Path(args.private_key_file).read_text(encoding='utf-8').strip()
-            config = build_config(args.target, key, secrets.token_hex(8), args.port)
+            config = build_config(args.target, key, secrets.token_hex(8), args.port, args.fallback_port, args.xhttp_path)
         else:
             config = load_config(args.config)
         if args.action == 'list-clients':
@@ -103,14 +116,19 @@ def main(argv=None):
             return 0
         if args.action == 'add-client':
             name = validate_name(args.name)
-            if any(c.get('email') == name for c in clients(config)):
+            if any(c.get('email') == name for group in client_groups(config).values() for c in group):
                 raise ValueError('client name already exists')
-            clients(config).append({'id':str(uuid.uuid4()), 'email':name, 'flow':'xtls-rprx-vision'})
+            client_id = str(uuid.uuid4())
+            for tag, group in client_groups(config).items():
+                entry = {'id':client_id, 'email':name}
+                if tag == 'vless-reality': entry['flow'] = 'xtls-rprx-vision'
+                group.append(entry)
         elif args.action == 'revoke-client':
             name = validate_name(args.name)
-            before = len(clients(config))
-            clients(config)[:] = [c for c in clients(config) if c.get('email') != name]
-            if len(clients(config)) == before:
+            groups = client_groups(config)
+            before = sum(len(group) for group in groups.values())
+            for group in groups.values(): group[:] = [c for c in group if c.get('email') != name]
+            if sum(len(group) for group in groups.values()) == before:
                 raise ValueError('client not found')
         if args.action == 'validate':
             result = subprocess.run([args.xray, 'run', '-test', '-config', args.config], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=30, check=False)
