@@ -70,8 +70,14 @@ def configured(p):
 
 def command(p, action):
     if action in ('restart','stop') and not configured(p): return False
-    return subprocess.run([SYSTEMCTL,action,p['unit']],stdout=subprocess.DEVNULL,
-                          stderr=subprocess.DEVNULL,timeout=25,check=False).returncode == 0
+    if action=='restart':
+        from . import recovery
+        recovery.issue_ticket(p)
+    try:
+        return subprocess.run([SYSTEMCTL,action,p['unit']],stdout=subprocess.DEVNULL,
+                              stderr=subprocess.DEVNULL,timeout=25,check=False).returncode == 0
+    finally:
+        if action=='restart': recovery.clear_ticket(p)
 
 
 def bound(p):

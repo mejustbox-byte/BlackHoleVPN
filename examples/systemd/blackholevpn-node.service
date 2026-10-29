@@ -1,0 +1,32 @@
+# Template for a NEW, dedicated, root-owned operator-managed node.
+# Replace all paths and review permissions before installation. Adopt before
+# enabling ExecStartPre; see docs/automatic-recovery.md for the bootstrap order.
+[Unit]
+Description=BlackHoleVPN guarded Xray node
+Wants=network-online.target
+After=network-online.target
+RequiresMountsFor=/etc/blackholevpn
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/blackholevpn/src
+ExecStartPre=/usr/bin/python3 -m blackhole.recovery --policy /etc/blackholevpn/node-policy.json prepare
+ExecStart=/opt/blackholevpn/bin/xray run -config /etc/blackholevpn/server.json
+Restart=on-failure
+RestartSec=5
+TimeoutStartSec=90
+NoNewPrivileges=yes
+ProtectSystem=strict
+ReadWritePaths=/etc/blackholevpn
+ProtectHome=yes
+PrivateTmp=yes
+CapabilityBoundingSet=
+UMask=0077
+StandardOutput=null
+StandardError=null
+
+[Install]
+WantedBy=multi-user.target
