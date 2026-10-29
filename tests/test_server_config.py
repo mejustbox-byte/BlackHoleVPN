@@ -22,7 +22,7 @@ class ConfigTests(unittest.TestCase):
         with self.assertRaises(ValueError): save_validated(self.path, build_config('example.org',self.key,'a'*16,443), str(self.fake))
         self.assertEqual(self.path.read_text(), 'original')
     def test_add_revoke_and_duplicate(self):
-        keyfile=self.root/'key'; keyfile.write_text(self.key)
+        keyfile=self.root/'key'; keyfile.write_text(self.key); keyfile.chmod(0o600)
         base=['--config',str(self.path),'--xray',str(self.fake)]
         self.assertEqual(main(base+['init','--target','example.org','--private-key-file',str(keyfile)]),0)
         self.assertEqual(main(base+['add-client','phone']),0)
@@ -38,7 +38,7 @@ class ConfigTests(unittest.TestCase):
         for target,key,short,port in [('bad host','A'*43,'a'*16,443),('example.org','bad','a'*16,443),('example.org','A'*43,'a'*16,0)]:
             with self.assertRaises(ValueError): build_config(target,key,short,port)
     def test_no_overwrite_on_init(self):
-        self.path.write_text('keep'); keyfile=self.root/'key'; keyfile.write_text(self.key)
+        self.path.write_text('keep'); keyfile=self.root/'key'; keyfile.write_text(self.key); keyfile.chmod(0o600)
         self.assertEqual(main(['--config',str(self.path),'--xray',str(self.fake),'init','--target','example.org','--private-key-file',str(keyfile)]),2)
         self.assertEqual(self.path.read_text(),'keep')
 

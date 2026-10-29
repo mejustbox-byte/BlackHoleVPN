@@ -31,3 +31,5 @@ VLESS — прокси-протокол, а не полноценный сист
 Экспорт полного клиентского JSON с опциональным FinalMask: [команды и ограничения](docs/client-json-export.md).
 
 Импорт четырёх JSON-вариантов в клиентские приложения: [Happ и v2rayN](docs/json-import-happ-v2rayn.md).
+
+Подготовка к эксплуатации на нескольких VPS: [этапы и критерии приёмки](docs/production-roadmap.md). Операторский CLI поддерживает [транзакции конфигурации, backup и restore](docs/config-transactions.md). Это ещё не готовый промышленный релиз.

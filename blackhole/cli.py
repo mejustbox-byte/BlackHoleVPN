@@ -6,9 +6,10 @@ import re
 import secrets
 import subprocess
 import sys
-import tempfile
 import uuid
 from pathlib import Path
+from . import config_store
+from .subctl import private_file
 
 
 def validate_name(value):
@@ -54,35 +55,12 @@ def clients(config):
 
 
 def save_validated(path, config, xray):
-    path = Path(path)
-    if path.is_symlink():
-        raise ValueError('config path must not be a symlink')
-    parent = path.parent
-    if not parent.is_dir():
-        raise ValueError('config directory must already exist')
-    fd, tmp = tempfile.mkstemp(prefix='.blackhole-', suffix='.json', dir=parent)
-    try:
-        with os.fdopen(fd, 'w', encoding='utf-8') as out:
-            os.fchmod(out.fileno(), 0o600)
-            json.dump(config, out, indent=2)
-            out.write('\n')
-            out.flush()
-            os.fsync(out.fileno())
-        # Do not echo Xray output: it may expose configuration details.
-        result = subprocess.run([xray, 'run', '-test', '-config', tmp], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=30, check=False)
-        if result.returncode:
-            raise ValueError('Xray rejected the candidate configuration; existing file unchanged')
-        os.replace(tmp, path)
-    finally:
-        if os.path.exists(tmp):
-            os.unlink(tmp)
+    with config_store.locked(path):
+        config_store.publish(path, (json.dumps(config, indent=2) + '\n').encode('utf-8'), xray)
 
 
 def load_config(path):
-    if Path(path).is_symlink():
-        raise ValueError('config path must not be a symlink')
-    with open(path, encoding='utf-8') as f:
-        config = json.load(f)
+    config = json.loads(config_store.read_private(path))
     clients(config)
     return config
 
@@ -102,44 +80,64 @@ def main(argv=None):
     remove = sub.add_parser('revoke-client'); remove.add_argument('name')
     sub.add_parser('list-clients')
     sub.add_parser('validate')
+    sub.add_parser('backup')
+    sub.add_parser('list-backups')
+    restore = sub.add_parser('restore'); restore.add_argument('revision')
     args = parser.parse_args(argv)
     try:
-        if args.action == 'init':
-            if os.path.lexists(args.config):
-                raise ValueError('config already exists; refusing to overwrite')
-            key = Path(args.private_key_file).read_text(encoding='utf-8').strip()
-            config = build_config(args.target, key, secrets.token_hex(8), args.port, args.fallback_port, args.xhttp_path)
-        else:
-            config = load_config(args.config)
-        if args.action == 'list-clients':
-            for c in clients(config): print(c.get('email', ''))
+        with config_store.locked(args.config):
+            if args.action == 'list-backups':
+                for revision in config_store.list_revisions(args.config): print(revision)
+                return 0
+            if args.action == 'restore':
+                source = config_store.revision_path(args.config, args.revision)
+                restored = json.loads(config_store.read_private(source))
+                clients(restored)
+                config_store.publish(args.config, (json.dumps(restored, indent=2) + '\n').encode('utf-8'), args.xray)
+                print('Revision validated and restored; restart Xray separately')
+                return 0
+            if args.action == 'init':
+                if os.path.lexists(args.config):
+                    raise ValueError('config already exists; refusing to overwrite')
+                key = private_file(args.private_key_file).strip()
+                config = build_config(args.target, key, secrets.token_hex(8), args.port, args.fallback_port, args.xhttp_path)
+            else:
+                config = load_config(args.config)
+            if args.action == 'backup':
+                result = subprocess.run([args.xray, 'run', '-test', '-config', args.config],
+                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=30, check=False)
+                if result.returncode: raise ValueError('configuration validation failed')
+                print(config_store.snapshot(args.config))
+                return 0
+            if args.action == 'list-clients':
+                for c in clients(config): print(c.get('email', ''))
+                return 0
+            if args.action == 'add-client':
+                name = validate_name(args.name)
+                if any(c.get('email') == name for group in client_groups(config).values() for c in group):
+                    raise ValueError('client name already exists')
+                client_id = str(uuid.uuid4())
+                for tag, group in client_groups(config).items():
+                    entry = {'id':client_id, 'email':name}
+                    if tag == 'vless-reality': entry['flow'] = 'xtls-rprx-vision'
+                    group.append(entry)
+            elif args.action == 'revoke-client':
+                name = validate_name(args.name)
+                groups = client_groups(config)
+                before = sum(len(group) for group in groups.values())
+                for group in groups.values(): group[:] = [c for c in group if c.get('email') != name]
+                if sum(len(group) for group in groups.values()) == before:
+                    raise ValueError('client not found')
+            if args.action == 'validate':
+                result = subprocess.run([args.xray, 'run', '-test', '-config', args.config], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=30, check=False)
+                if result.returncode: raise ValueError('Xray rejected configuration')
+                print('Configuration accepted by Xray')
+            else:
+                config_store.publish(args.config, (json.dumps(config, indent=2) + '\n').encode('utf-8'), args.xray)
+                print('Configuration validated and saved; restart Xray separately')
             return 0
-        if args.action == 'add-client':
-            name = validate_name(args.name)
-            if any(c.get('email') == name for group in client_groups(config).values() for c in group):
-                raise ValueError('client name already exists')
-            client_id = str(uuid.uuid4())
-            for tag, group in client_groups(config).items():
-                entry = {'id':client_id, 'email':name}
-                if tag == 'vless-reality': entry['flow'] = 'xtls-rprx-vision'
-                group.append(entry)
-        elif args.action == 'revoke-client':
-            name = validate_name(args.name)
-            groups = client_groups(config)
-            before = sum(len(group) for group in groups.values())
-            for group in groups.values(): group[:] = [c for c in group if c.get('email') != name]
-            if sum(len(group) for group in groups.values()) == before:
-                raise ValueError('client not found')
-        if args.action == 'validate':
-            result = subprocess.run([args.xray, 'run', '-test', '-config', args.config], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=30, check=False)
-            if result.returncode: raise ValueError('Xray rejected configuration')
-            print('Configuration accepted by Xray')
-        else:
-            save_validated(args.config, config, args.xray)
-            print('Configuration validated and saved; restart Xray separately')
-        return 0
     except (OSError, ValueError, KeyError, TypeError, json.JSONDecodeError, subprocess.TimeoutExpired) as exc:
-        print('error: '+str(exc), file=sys.stderr)
+        print('error: operation failed; check private files, lock, revisions and Xray compatibility', file=sys.stderr)
         return 2
 
 if __name__ == '__main__':
