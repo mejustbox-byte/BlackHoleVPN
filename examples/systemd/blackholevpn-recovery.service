@@ -1,0 +1,29 @@
+# Privileged local supervisor; not a remotely accessible agent.
+# Policy must bind exactly to blackholevpn-node.service and its ExecStart.
+[Unit]
+Description=BlackHoleVPN local recovery supervisor
+Wants=network-online.target blackholevpn-node.service
+After=network-online.target blackholevpn-node.service
+RequiresMountsFor=/etc/blackholevpn
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/blackholevpn/src
+ExecStart=/usr/bin/python3 -m blackhole.recovery --policy /etc/blackholevpn/node-policy.json watch --interval 5
+KillMode=control-group
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=yes
+ProtectSystem=strict
+ReadWritePaths=/etc/blackholevpn
+ProtectHome=yes
+PrivateTmp=yes
+UMask=0077
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

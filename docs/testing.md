@@ -30,3 +30,5 @@ BLACKHOLE_TEST_XRAY=/usr/local/bin/xray python3 -m unittest discover -s tests -v
 Тесты реестра проверяют отзыв/restore, второе активное устройство, повторную выдачу имени, сохранность tombstone после неуспешной публикации и fail-closed при потере authority. Сетевая проверка выполняется отдельно; запись файла не равна применению службы. [Реестр и миграция](device-registry.md).
 
 Apply-тесты проверяют принятие last-good, применение, откат с tombstone, отказ отката, повреждённый журнал, binding и явный recover. Реальная systemd-служба и HTTPS-трафик проверяются отдельным VPS-испытанием, не unit mock. [Процедура и ограничения](health-checked-apply.md).
+
+Recovery-тесты проверяют pre-start с актуальным authority, живой lock ticket, stale boot/PID/поколение, игнорирование потерянного контроллера, busy без прерывания apply, автоматический rollback после SIGKILL-сценария и отсутствие authority. Systemd restart/SIGKILL и boot-like target проверяются отдельно на VPS. [Автоматическое восстановление](automatic-recovery.md).
